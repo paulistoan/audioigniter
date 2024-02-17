@@ -201,6 +201,36 @@ class AudioIgniter {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
 		add_action( 'template_redirect', array( $this, 'handle_playlist_endpoint' ) );
 
+		add_action( 'rest_api_init', function ( $server ) {
+			$server->register_route( 'remember-last/v1', '/audioigniter/remember-last', array(
+				array(
+					'methods'	=> 'POST',
+					'callback' => function ($req) {
+						if ( ! is_user_logged_in() ) {
+								return new WP_Error( 'user_not_logged_in', 'Route only available for logged in users', array( 'status' => 401 ) );
+						}
+
+						$user = wp_get_current_user();
+						$user_id = $user->ID;
+						$this->save_remember_last_position($user_id, json_decode($req->get_body()));
+					},
+				),
+				array(
+					'methods'	=> 'GET',
+					'callback' => function ($req) {
+						if ( ! is_user_logged_in() ) {
+								return new WP_Error( 'user_not_logged_in', 'Route only available for logged in users', array( 'status' => 401 ) );
+						}
+
+						$user = wp_get_current_user();
+						$user_id = $user->ID;
+						$player_id = $req->get_param( 'playerId' );
+						return $this->get_remember_last_position($user_id, $player_id);
+					},
+				),
+			) );
+		} );
+
 		do_action( 'audioigniter_frontend_init' );
 	}
 
@@ -238,6 +268,14 @@ class AudioIgniter {
 			'enabled' => get_option( 'audioigniter_stats_enabled' ) && class_exists( 'AudioIgniter_Pro' ),
 			'apiUrl'  => get_rest_url( null, 'audioigniter/v1' ),
 		) );
+
+		if ( is_user_logged_in() ) {
+			wp_localize_script( 'audioigniter', 'aiRememberLast', array(
+				'enabled' => get_option( 'audioigniter_stats_enabled' ) && class_exists( 'AudioIgniter_Pro' ),
+				'apiUrl'	=> get_rest_url( null, 'audioigniter/remember-last' ),
+				'nonce' => wp_create_nonce( 'wp_rest' ),
+			) );
+		}
 
 		wp_register_style( 'audioigniter-admin', untrailingslashit( $this->plugin_url() ) . '/assets/css/admin-styles.css', array(), $this->version );
 		wp_register_script( 'audioigniter-admin', untrailingslashit( $this->plugin_url() ) . '/assets/js/audioigniter.js', array(), $this->version, true );
@@ -1186,6 +1224,7 @@ class AudioIgniter {
 			'data-volume'                   => intval( $this->get_post_meta( $post_id, '_audioigniter_volume', 100 ) ),
 			'data-tracklist-height'         => intval( $this->get_post_meta( $post_id, '_audioigniter_tracklisting_height', 185 ) ),
 			'data-max-width'                => $this->get_post_meta( $post_id, '_audioigniter_max_width' ),
+			'data-remember-last'            => $this->convert_bool_string( $this->get_post_meta( $post_id, '_audioigniter_remember_last', 1 ) ),
 		);
 
 		return apply_filters( 'audioigniter_get_playlist_data_attributes_array', $attrs, $post_id );
@@ -1397,6 +1436,21 @@ class AudioIgniter {
 	public function plugin_path() {
 		return self::$plugin_path;
 	}
+
+  protected function save_remember_last_position( $user_id, $body ) {
+    $parameters = array(
+        'position' => $body->position,
+        'activeIndex' => $body->activeIndex,
+        'timestamp' => time(),
+    );
+
+    update_user_meta( $user_id, 'ai_rl_' . $body->playerId, $parameters );
+  }
+
+  protected function get_remember_last_position( $user_id, $player_id ) {
+    return get_user_meta( $user_id, 'ai_rl_' . $player_id, true );
+  }
+
 }
 
 

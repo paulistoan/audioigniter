@@ -24,8 +24,6 @@ const soundProvider = (Player, events) => {
         shuffleEnabled,
       } = this.props;
 
-      const initialData = playerStorage.get(playerId);
-
       this.state = {
         tracks: [],
         activeIndex: 0, // Determine active track by index
@@ -36,7 +34,7 @@ const soundProvider = (Player, events) => {
         // [4, 2, 0, ...] will play the 5th track first, 3rd second, then the 1st, etc.
         trackQueue: [],
         playStatus: Sound.status.STOPPED,
-        position: initialData?.position ?? 0,
+        position: 0,
         duration: 0,
         playbackRate: 1,
         volume: volume == null ? 100 : volume,
@@ -79,7 +77,6 @@ const soundProvider = (Player, events) => {
         track,
       } = this.props;
       const { shuffle } = this.state;
-      const initialData = playerStorage.get(playerId);
 
       // We have a standalone track (from the shortcode).
       if (track) {
@@ -96,7 +93,10 @@ const soundProvider = (Player, events) => {
       const tracksPromised = fetch(tracksUrl).then(res => res.json());
 
       if (!soundcloudClientId) {
-        tracksPromised.then(tracks => {
+        Promise.all([tracksPromised, this.getInitialData(playerId)]).then(values => {
+          const tracks = values[0];
+          const initialData = values[1];
+          this.state.position = initialData?.position ?? 0;
           const { trackQueue, activeIndex } = getInitialTrackQueueAndIndex({
             tracks,
             initialTrack:
@@ -211,6 +211,7 @@ const soundProvider = (Player, events) => {
             event: EVENT.STOP,
             ...getEventMeta(this.state, this.props),
           });
+          this.savePositionInBackend();
         },
       );
 
@@ -263,6 +264,7 @@ const soundProvider = (Player, events) => {
             ...getEventMeta(this.state, this.props),
             oldPosition: currentPosition,
           });
+          this.savePositionInBackend();
         },
       );
     }
@@ -406,6 +408,7 @@ const soundProvider = (Player, events) => {
               event: EVENT.PAUSE,
               ...getEventMeta(this.state, this.props),
             });
+            this.savePositionInBackend();
           },
         );
       }
@@ -444,6 +447,9 @@ const soundProvider = (Player, events) => {
                 : EVENT.PAUSE,
             ...getEventMeta(this.state, this.props),
           });
+          if (this.state.playStatus === Sound.status.PAUSED) {
+            this.savePositionInBackend();
+          }
         },
       );
     }
@@ -483,6 +489,60 @@ const soundProvider = (Player, events) => {
       this.setState(state => ({
         tracks: state.tracks.slice().reverse(),
       }));
+    }
+
+    savePositionInBackend() {
+      // will only be available if user is logged in
+      const apiUrl = window.aiRememberLast?.apiUrl;
+      if (apiUrl) {
+        fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-WP-Nonce': aiRememberLast.nonce,
+          },
+          body: JSON.stringify({
+            playerId: this.props.playerId,
+            position: this.state.position,
+            activeIndex: this.state.activeIndex,
+          }),
+        })
+      }
+    }
+
+    getInitialData(playerId) {
+      return new Promise((resolve, reject) => {
+        const fromPlayerStorage = playerStorage.get(playerId);
+        // apiUrl will only be available if user is logged in
+        const apiUrl = window.aiRememberLast?.apiUrl;
+        if (apiUrl) {
+          fetch(apiUrl + `?playerId=${playerId}`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-WP-Nonce': aiRememberLast.nonce,
+            },
+          })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error();
+            }
+            return response.json();
+          })
+          .then(response => {
+            if (!fromPlayerStorage || (response.position > fromPlayerStorage.position)) {
+              resolve(response);
+            } else {
+              resolve(fromPlayerStorage);
+            }
+          })
+          .catch(response => {
+            resolve(fromPlayerStorage)
+          });
+        } else {
+          resolve(fromPlayerStorage);
+        }
+      });
     }
 
     render() {
