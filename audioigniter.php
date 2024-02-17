@@ -271,7 +271,7 @@ class AudioIgniter {
 
 		if ( is_user_logged_in() ) {
 			wp_localize_script( 'audioigniter', 'aiRememberLast', array(
-				'enabled' => get_option( 'audioigniter_stats_enabled' ) && class_exists( 'AudioIgniter_Pro' ),
+				// 'enabled' => get_option( 'audioigniter_stats_enabled' ) && class_exists( 'AudioIgniter_Pro' ),
 				'apiUrl'	=> get_rest_url( null, 'audioigniter/remember-last' ),
 				'nonce' => wp_create_nonce( 'wp_rest' ),
 			) );
