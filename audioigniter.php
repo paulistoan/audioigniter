@@ -212,7 +212,7 @@ class AudioIgniter {
 
 						$user = wp_get_current_user();
 						$user_id = $user->ID;
-						$this->save_remember_last_position($user_id, json_decode($req->get_body()));
+						return $this->save_remember_last_position($user_id, json_decode($req->get_body()));
 					},
 				),
 				array(
@@ -1224,7 +1224,6 @@ class AudioIgniter {
 			'data-volume'                   => intval( $this->get_post_meta( $post_id, '_audioigniter_volume', 100 ) ),
 			'data-tracklist-height'         => intval( $this->get_post_meta( $post_id, '_audioigniter_tracklisting_height', 185 ) ),
 			'data-max-width'                => $this->get_post_meta( $post_id, '_audioigniter_max_width' ),
-			'data-remember-last'            => $this->convert_bool_string( $this->get_post_meta( $post_id, '_audioigniter_remember_last', 1 ) ),
 		);
 
 		return apply_filters( 'audioigniter_get_playlist_data_attributes_array', $attrs, $post_id );
@@ -1438,6 +1437,10 @@ class AudioIgniter {
 	}
 
   protected function save_remember_last_position( $user_id, $body ) {
+    if ( ! isset( $body->position ) || ! isset ( $body->activeIndex ) ) {
+      return new WP_Error( 'payload_invalid', 'Invalid payload', array( 'status' => 400 ) );
+    }
+
     $parameters = array(
         'position' => $body->position,
         'activeIndex' => $body->activeIndex,
@@ -1445,10 +1448,19 @@ class AudioIgniter {
     );
 
     update_user_meta( $user_id, 'ai_rl_' . $body->playerId, $parameters );
+    return NULL;
   }
 
   protected function get_remember_last_position( $user_id, $player_id ) {
-    return get_user_meta( $user_id, 'ai_rl_' . $player_id, true );
+    $user_meta = (object) get_user_meta( $user_id, 'ai_rl_' . $player_id, true );
+    if ( ! isset( $user_meta->position) || ! isset( $user_meta->activeIndex) ) {
+      return new WP_Error( 'user_meta_unavailable', 'Unable to retrieve information from user_meta', array( 'status' => 500 ) );
+    } else {
+      return array(
+        'position' => $user_meta->position,
+        'activeIndex' => $user_meta->activeIndex,
+      );
+    }
   }
 
 }
